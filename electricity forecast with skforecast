@@ -1,0 +1,202 @@
+import numpy as np
+import pandas as pd
+import matplotlib.pyplot as plt
+from statsmodels.graphics.tsaplots import month_plot, quarter_plot
+from statsmodels.tsa.seasonal import seasonal_decompose
+from statsmodels.graphics.tsaplots import plot_acf, plot_pacf
+from statsmodels.tsa.arima.model import ARIMA
+from statsmodels.tsa.statespace.sarimax import SARIMAX
+from sklearn.metrics import mean_squared_error, mean_absolute_error
+
+# Data importation
+path = "/Users/alfredolucente/Desktop/Python Datasets/Italian Electricity Demand 2010-12.xlsx"
+df1 = pd.read_excel(path, sheet_name="2010")
+df2 = pd.read_excel(path, sheet_name="2011")
+df3 = pd.read_excel(path, sheet_name="2012")
+
+# Data manipulation
+new_df = pd.concat([df1, df2, df3], axis=0, ignore_index=True)
+dates = pd.date_range(start="01-01-2010", end="31-12-2012", freq="M")
+new_df.index = dates
+
+
+# Plot the electricity demand
+plt.plot(new_df.index, new_df["Domanda (GWh)"], label="Demand", color="c")
+plt.title("Italian Electricty Demand From 2010 to 2012")
+plt.xlabel("Dates")
+plt.ylabel("Demand (GWh)")
+plt.legend()
+plt.show()
+
+#Rolling statistics
+window = 6
+new_df["Rolling Std"] = new_df["Domanda (GWh)"].rolling(window=window).std()
+plt.plot(new_df["Rolling Std"])
+plt.title(f"Italian Electricity Demand {window} days rolling std")
+plt.show()
+
+new_df["Rolling Average"] = new_df["Domanda (GWh)"].rolling(window=window).mean()
+plt.plot(new_df["Rolling Average"])
+plt.title(f"Italian Electricity Demand {window} days rolling mean")
+plt.show()
+
+new_df = new_df.drop(["Mese", "Anno"], axis=1)
+print(new_df)
+
+# Seasonality: monthly and quarterly plot
+month_plot(new_df["Domanda (GWh)"].resample("M").mean())
+plt.title("Monthly Seasonality")
+plt.show()
+
+quarter_plot(new_df["Domanda (GWh)"].resample("QE").mean())
+plt.title("Quarterly Seasonality")
+plt.show()
+
+# Seasonal decomposition
+decompose = seasonal_decompose(new_df["Domanda (GWh)"], model="add", period=12)
+decompose.plot()
+plt.show()
+
+# Autocorrelation and partial autocorrelation
+plot_acf(new_df["Domanda (GWh)"], lags=35)
+plot_pacf(new_df["Domanda (GWh)"], lags=17)
+plt.show()
+
+# Train-test split
+train_data = new_df["Domanda (GWh)"][:'2012-03-31']  # Train until March 2012
+test_data = new_df["Domanda (GWh)"]['2012-04-01':]  # Test from April 2012
+
+# ARIMA model
+model = ARIMA(train_data, order=(1, 1, 1))
+model_fit = model.fit()
+
+# Forecast ARIMA model
+forecast_steps = len(test_data)
+forecast = model_fit.forecast(steps=forecast_steps)
+
+# Create a forecasted series using the test data index
+forecast_index = test_data.index
+forecast_series = pd.Series(forecast, index=forecast_index)
+
+# Plot ARIMA Forecast
+plt.figure(figsize=(12, 6))
+plt.plot(train_data, label='Training Data', color='blue')
+plt.plot(test_data, label='Test Data (Actual)', color='green')
+plt.plot(forecast_series, label='Forecasted (Test)', color='red', linestyle='--')
+plt.title("Training Data, Test Data, and ARIMA Forecast")
+plt.xlabel("Date")
+plt.ylabel("Domanda (GWh)")
+plt.legend()
+plt.show()
+
+# SARIMAX model
+model = SARIMAX(train_data,
+                order=(1, 1, 1),
+                seasonal_order=(1, 1, 1, 12),
+                enforce_stationarity=False,
+                enforce_invertibility=False)
+model_fit = model.fit()
+
+# Forecast SARIMAX model
+forecast_steps = len(test_data)
+forecast = model_fit.forecast(steps=forecast_steps)
+forecast_series = pd.Series(forecast, index=test_data.index)
+
+# Plot SARIMA Forecast
+plt.figure(figsize=(12, 6))
+plt.plot(train_data, label="Training Data", color="blue")
+plt.plot(test_data, label="Test Data", color="green")
+plt.plot(forecast_series, label="SARIMAX Forecast", color="red", linestyle="--")
+plt.title("SARIMAX Forecast vs Actual")
+plt.xlabel("Date")
+plt.ylabel("Domanda (GWh)")
+plt.legend()
+plt.show()
+
+# Residuals plot for SARIMA
+residuals = model_fit.resid
+plt.figure(figsize=(12, 4))
+plt.plot(residuals)
+plt.title("Residuals of SARIMA Model")
+plt.xlabel("Date")
+plt.ylabel("Residuals")
+plt.show()
+
+residuals.plot(kind='hist', bins=20, title='Residual Histogram')
+plt.show()
+
+# Machine Learning Forecasts (RandomForest, XGBoost, LightGBM)
+from skforecast.direct import ForecasterDirect
+from sklearn.ensemble import RandomForestRegressor
+from xgboost import XGBRegressor
+from lightgbm import LGBMRegressor
+
+# Create instances of the models
+random_forest_regressor = RandomForestRegressor()
+xgb_regressor = XGBRegressor(objective='reg:squarederror', n_estimators=100, learning_rate=0.1)
+lgbm_regressor = LGBMRegressor()
+
+# Initialize forecasters
+RFR_forecaster = ForecasterDirect(regressor=random_forest_regressor, lags=15, steps=12)
+XGB_forecaster = ForecasterDirect(regressor=xgb_regressor, lags=15, steps=12)
+LGBM_forecaster = ForecasterDirect(regressor=lgbm_regressor, lags=15, steps=12)
+
+# Fit forecasters
+RFR_forecaster.fit(train_data)
+XGB_forecaster.fit(train_data)
+LGBM_forecaster.fit(train_data)
+
+# Predictions
+random_forest_pred = RFR_forecaster.predict(len(test_data))
+XGB_pred = XGB_forecaster.predict(len(test_data))
+LGBM_pred = LGBM_forecaster.predict(len(test_data))
+
+# Ensure prediction indices match test data
+random_forest_pred.index = test_data.index
+XGB_pred.index = test_data.index
+LGBM_pred.index = test_data.index
+
+
+# Evaluate models using RMSE and MAE
+def evaluate_model(true, predicted, model_name):
+    rmse = np.sqrt(mean_squared_error(true, predicted))
+    mae = mean_absolute_error(true, predicted)
+    print(f"{model_name} - RMSE: {rmse:.4f}, MAE: {mae:.4f}")
+
+
+evaluate_model(test_data, random_forest_pred, "Random Forest")
+evaluate_model(test_data, XGB_pred, "XGBoost")
+evaluate_model(test_data, LGBM_pred, "LightGBM")
+
+# Random Forest Plot
+plt.plot(train_data, label='Train Data', color='blue')
+plt.plot(test_data, label='Test Data (Actual)', color='black')
+plt.plot(random_forest_pred, label='Random Forest Prediction', linestyle='--', color='green')
+plt.title('Random Forest Forecast vs Actual')
+plt.xlabel('Date')
+plt.ylabel('Domanda (GWh)')
+plt.legend()
+plt.tight_layout()
+plt.show()
+
+# XGB Plot
+plt.plot(train_data, label='Train Data', color='blue')
+plt.plot(test_data, label='Test Data (Actual)', color='black')
+plt.plot(XGB_pred, label='XGB', linestyle='--', color='green')
+plt.title('XGB Forecast vs Actual')
+plt.xlabel('Date')
+plt.ylabel('Domanda (GWh)')
+plt.legend()
+plt.tight_layout()
+plt.show()
+
+# LGBM Plot
+plt.plot(train_data, label='Train Data', color='blue')
+plt.plot(test_data, label='Test Data (Actual)', color='black')
+plt.plot(LGBM_pred, label='LGBM', linestyle='--', color='green')
+plt.title('LGBM Forecast vs Actual')
+plt.xlabel('Date')
+plt.ylabel('Domanda (GWh)')
+plt.legend()
+plt.tight_layout()
+plt.show()
