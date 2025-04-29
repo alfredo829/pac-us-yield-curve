@@ -1,0 +1,65 @@
+import numpy as np
+import pandas as pd
+import plotly.graph_objects as go
+from sklearn.decomposition import PCA
+from sklearn.preprocessing import StandardScaler
+
+# --- Import data ---
+path = "/Users/alfredolucente/Desktop/Python Datasets/daily-treasury-rates.csv"
+df = pd.read_csv(path, delimiter=",")
+df = df.fillna(method="ffill")
+df = df.set_index("Date")
+df = df.sort_index(ascending=True)
+
+# --- Plot original Treasury Rates ---
+fig = go.Figure()
+for col in df.columns:
+    fig.add_trace(go.Scatter(x=df.index, y=df[col], name=col))
+
+fig.update_layout(
+    title="Daily Treasury Rates Over Time",
+    xaxis_title="Date",
+    yaxis_title="Rate (%)",
+    template="plotly_white"
+)
+fig.show()
+
+# --- PCA ---
+scaler = StandardScaler()
+x_scaled = scaler.fit_transform(df)
+
+pca = PCA(n_components=3)
+x_pca = pca.fit_transform(x_scaled)
+
+# --- Plot PCA Components over Time ---
+fig1 = go.Figure()
+for i in range(x_pca.shape[1]):
+    fig1.add_trace(go.Scatter(x=df.index, y=x_pca[:, i], name=f"PCA{i+1}"))
+
+fig1.update_layout(
+    title="First 3 Principal Components Over Time",
+    xaxis_title="Date",
+    yaxis_title="PCA Value",
+    template="plotly_white"
+)
+fig1.show()
+
+# --- Explained Variance Bar Plot ---
+explained_var = pca.explained_variance_ratio_
+
+fig2 = go.Figure()
+fig2.add_trace(go.Bar(
+    x=[f"PC{i+1}" for i in range(len(explained_var))],
+    y=explained_var,
+    text=[f"{v:.2%}" for v in explained_var],
+    textposition='auto'
+))
+
+fig2.update_layout(
+    title="Explained Variance by Principal Component",
+    xaxis_title="Principal Components",
+    yaxis_title="Proportion of Variance Explained",
+    yaxis_tickformat='.0%',
+    template="plotly_white"
+)
+fig2.show()
