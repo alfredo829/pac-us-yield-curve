@@ -1,0 +1,88 @@
+import numpy as np
+import pandas as pd
+import matplotlib.pyplot as plt
+from statsmodels.tsa.seasonal import seasonal_decompose
+from statsmodels.tsa.stattools import adfuller
+from statsmodels.graphics.tsaplots import plot_acf, plot_pacf
+
+#import data
+pathname = "/Users/alfredolucente/Desktop/Python Datasets/Export-DownloadCenterFile-20250415-193503.xlsx"
+df = pd.read_excel(pathname, sheet_name="Sheet1")
+
+#data cleaning
+df = df.drop(['Forecast Total Load [MW]', 'Bidding Zone'], axis=1)
+df["Date"] = pd.to_datetime(df["Date"])
+df.set_index("Date", inplace=True)
+df.sort_index(inplace=True)
+
+#resample the data to hourly
+df = df.resample(rule="h").mean()
+df = df.fillna(method="ffill")
+
+print(df.info())
+print(df.describe())
+
+#plot
+plt.plot(df, label="Terna Electricity Export")
+plt.xlabel("Date")
+plt.ylabel("Export in MWH")
+plt.title("Hourly Export")
+plt.tight_layout()
+plt.show()
+
+#seasonal decomposition
+decompose = seasonal_decompose(df, model="add", period=24)
+decompose.plot()
+plt.show()
+
+#autocorrelation and partial autocorrelation
+plot_acf(df, lags=24)
+plt.show()
+
+plot_pacf(df, lags=24)
+plt.show()
+
+#split the dataset in train and test
+size = 0.75
+rows = df.shape[0]
+train_size = int(rows * size)
+train = df[:train_size]
+test = df[train_size:]
+
+#quick plot of train and test
+plt.plot(train, color="c", label="Train Data")
+plt.plot(test, color="r", label="Test Data")
+plt.xlabel("Date")
+plt.ylabel("Export KWH")
+plt.title("Train and Test Data")
+plt.legend()
+plt.tight_layout()
+plt.show()
+
+#set Statistical and ML models
+from statsmodels.tsa.statespace.sarimax import SARIMAX
+
+#Create a dataset where to store all forecasts and the test data
+fd = pd.DataFrame({"Test data": test.values.flatten()}, index=test.index)
+
+# SARIMAX Model
+model_s = SARIMAX(train, order=(1, 1, 1),
+                 seasonal_order=(1, 1, 1, 24),
+                 enforce_stationarity=False,
+                 enforce_invertibility=False)
+model_s_fit = model_s.fit()
+sarimax_forecast = model_s_fit.forecast(steps=len(test))  # Forecast for test set length
+fd["Sarimax Forecast"] = sarimax_forecast
+
+# Plotting forecasts vs actuals
+plt.plot(train, color="c", label="Train Data")
+plt.plot(fd["Sarimax Forecast"], color="r", label="Test Data")
+plt.xlabel("Date")
+plt.ylabel("Export KWH")
+plt.title("Train and Test Data")
+plt.legend()
+plt.tight_layout()
+plt.show()
+
+plt.tight_layout()
+plt.show()
