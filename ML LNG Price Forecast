@@ -1,0 +1,126 @@
+import numpy as np
+import pandas as pd
+import matplotlib.pyplot as plt
+from statsmodels.tsa.seasonal import seasonal_decompose
+from sklearn.model_selection import train_test_split
+from statsmodels.graphics.tsaplots import plot_acf, plot_pacf
+from statsmodels.tsa.statespace.sarimax import SARIMAX
+from sklearn.ensemble import RandomForestRegressor
+from xgboost import XGBRegressor
+from lightgbm import LGBMRegressor
+
+#import data
+path = "/Users/alfredolucente/Desktop/Python Datasets/data-4.csv"
+df = pd.read_csv(path, delimiter=",")
+
+#data cleaning
+df.drop("Unnamed: 0", axis=1)
+df = df.iloc[:, [1, 2, 3]]
+df["Day"] = pd.to_datetime(df["Day"], format="%Y%m%d")
+df = df.set_index("Day")
+
+#quick plot
+fig, axes = plt.subplots(1, 2)
+axes[0].plot(df.index, df["Price"], label="LNG price", color="c")
+axes[0].set_title("Price over time")
+axes[0].legend()
+axes[1].plot(df.index, df["Sentiment"], label="Sentiment", color="r")
+axes[1].set_title("Sentiment over time")
+axes[1].legend()
+plt.show()
+
+#rolling stats
+df["30d Rolling Mean"] = df["Price"].rolling(window=30).mean()
+df["30d Rolling Sentiment"] = df["Sentiment"].rolling(window=30).mean()
+
+fig, axes = plt.subplots(1, 2)
+axes[0].plot(df.index, df["30d Rolling Mean"], label="30d Rolling LNG price", color="c")
+axes[0].plot(df.index, df["Price"], label="LNG price", color="g")
+axes[0].set_title("30d Rolling Price")
+axes[0].legend()
+axes[1].plot(df.index, df["30d Rolling Sentiment"], label="30d Rolling Sentiment", color="r")
+axes[1].plot(df.index, df["Sentiment"], label="Sentiment", color="blue")
+axes[1].set_title("30d Rolling Sentiment")
+axes[1].legend()
+plt.show()
+
+#same plot
+fig, axes = plt.subplots()
+axes.plot(df.index, df["Price"], label="LNG price", color="c")
+axes.legend()
+axes.set_ylabel("LNG Price")
+
+axes1 = axes.twinx()
+
+axes1.plot(df.index, df["Sentiment"], label="Sentiment", color="r")
+axes1.legend()
+axes1.set_ylabel("Sentiment Score")
+plt.title("LNG Price and Sentiment Score")
+plt.show()
+
+#seasonality analisys
+sentiment_decompose = seasonal_decompose(df["Sentiment"], model="add", period=12)
+price_decompose = seasonal_decompose(df["Price"], model="add", period=12)
+decompose=[sentiment_decompose, price_decompose]
+
+for i in decompose:
+    i.plot()
+    plt.show()
+
+#acf and pacf plots
+plot_acf(df["Price"], lags=30)
+plt.show()
+
+plot_pacf(df["Price"], lags=30)
+plt.show()
+
+#create lagged feature
+def lag_function(n_of_lags):
+    for i in range(1, n_of_lags + 1):
+        df[f"lag{i}"] = df["Price"].shift(i)
+lag_function(7)
+
+print(df)
+
+#predict prices with past prices
+#train test split
+x = df.drop(["Sentiment", "30d Rolling Mean", "30d Rolling Sentiment"], axis=1)
+x.dropna()
+y = df["Price"]
+x_train, x_test, y_train, y_test = train_test_split(x, y, test_size=0.2, shuffle=False)
+x_train.fillna(method='ffill', inplace=True)
+
+#prepare the models
+xgboost = XGBRegressor(n_estimators=100, learning_rate=0.1)
+rnd_forest = RandomForestRegressor()
+lgbm = LGBMRegressor()
+models = [xgboost, rnd_forest, lgbm]
+names = ["XGBoost", "Random Forest", "LGBM"]
+
+for name, model in zip(names, models):
+    # Train the model
+    model.fit(x_train, y_train)
+    model_forecast = model.predict(x_test)
+    residuals = y_test - model_forecast
+
+    # Plot the predictions vs. actual values
+    plt.figure(figsize=(10, 6))
+    plt.plot(y_train.index, y_train, label='Train')
+    plt.plot(y_test.index, y_test, label='Test')
+    plt.plot(y_test.index, model_forecast, label='Forecast', linestyle='--')
+    plt.legend()
+    plt.title(f'{name} Forecast vs. Actual')
+    plt.show()
+
+    #residual plot
+    plt.figure(figsize=(10, 4))
+    plt.plot(y_test.index, residuals, label='Residuals')
+    plt.axhline(0, color='r', linestyle='--')
+    plt.title(f'{name} Residuals Over Time')
+    plt.legend()
+    plt.grid(True)
+    plt.show()
+
+
+
+
