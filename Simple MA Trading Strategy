@@ -1,0 +1,38 @@
+import numpy as np
+import pandas as pd
+import plotly.graph_objects as go
+
+# Set up df
+dates = pd.date_range(start="01-01-2000", end="01-01-2002", periods=2*252)
+values = np.random.normal(180, 10, len(dates))
+df = pd.DataFrame({"Prices": values}, index=dates)
+
+# Compute moving averages
+df["7d MA"] = df["Prices"].rolling(window=7).mean()
+df["14d MA"] = df["Prices"].rolling(window=14).mean()
+
+# Plot prices and moving averages
+fig = go.Figure()
+fig.add_trace(go.Scatter(x=df.index, y=df["Prices"], name="Price"))
+fig.add_trace(go.Scatter(x=df.index, y=df["7d MA"], name="7d MA"))
+fig.add_trace(go.Scatter(x=df.index, y=df["14d MA"], name="14d MA"))
+fig.update_layout(title="Random Price with 7d and 14d MA",
+                  xaxis_title="Date",
+                  yaxis_title="Price")
+fig.show()
+
+# Compute trading signals and returns
+df["Signal"] = np.where(df["7d MA"] > df["14d MA"], 1, -1)
+df["Position"] = df["Signal"].shift()
+df["Strategy Return"] = df["Position"] * df["Prices"].pct_change()
+df["Cumulative Return"] = (1 + df["Strategy Return"]).cumprod()
+df["Buy and Hold Return"] = (1 + df["Prices"].pct_change()).cumprod()
+
+# Plot strategy vs buy-and-hold
+fig1 = go.Figure()
+fig1.add_trace(go.Scatter(x=df.index, y=df["Buy and Hold Return"], name="Buy and Hold"))
+fig1.add_trace(go.Scatter(x=df.index, y=df["Cumulative Return"], name="Strategy Return"))
+fig1.update_layout(title="Strategy vs Buy and Hold Return",
+                   xaxis_title="Date",
+                   yaxis_title="Cumulative Return")
+fig1.show()
